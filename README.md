@@ -115,31 +115,45 @@ WakeTimeout=15
 
 ---
 
-## 重新编译源码
+## 项目架构与重新编译
 
-本项目使用 Windows 自带的 C# 编译器（无需安装任何 Visual Studio、.NET SDK 或第三方运行时）：
+本项目源码完全解耦模块化，并使用 Windows 自带的 C# 编译器编译（**无需安装 Visual Studio、.NET SDK 或任何第三方环境**）：
 
-- 双击运行 `build.bat` 或在终端执行：
+- **一键编译（推荐）**：直接双击根目录下的 `build.bat`，或在终端执行：
   ```cmd
-  C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:winexe /optimize+ /platform:anycpu /r:System.dll,System.Windows.Forms.dll,System.Drawing.dll /out:FakeLock.exe FakeLock.cs
+  build.bat
   ```
-  即可在 1 秒内生成约 20KB 的纯绿色单文件 `FakeLock.exe`。
+  底层调用 `csc.exe` 批量编译 `src\*.cs`，在 1 秒内生成约 20KB 的纯绿色单文件 `FakeLock.exe`。
 
 ---
 
-## 文件清单
+## 目录结构
 
 ```
-D:\Tools\fake-lock/
-├── FakeLock.cs        # 核心源码（C# WinForms + NotifyIcon 托盘 + RegisterHotKey 全局热键）
-├── FakeLock.exe       # 独立绿色可执行程序（约 20KB）
-├── build.bat          # Windows 批处理一键编译脚本
-├── build.ps1          # PowerShell 一键编译脚本
-├── run.bat            # 启动脚本（双击常驻托盘后台）
-├── lock.bat           # 快捷上锁脚本（立即呼出全屏假锁）
-├── unlock.bat         # 快捷解锁脚本（命令行解除锁定收回托盘）
-├── quit.bat           # 快捷退出脚本（彻底关闭后台托盘）
-├── config.ini         # 配置文件（密码、透明度、全局热键、常驻模式）
-├── test_fakelock.py   # 自动化测试与验证脚本
-└── README.md          # 中文使用文档
+fake-lock/
+├── .github/
+│   └── workflows/
+│       └── build.yml       # GitHub Actions 自动化 CI 构建流
+├── src/                    # 模块化 C# 源码
+│   ├── Program.cs          # 程序入口、单实例互斥体与跨进程 CLI 分发
+│   ├── TrayContext.cs      # 系统托盘宿主上下文、右键菜单与原生消息窗口
+│   ├── LockForm.cs         # 假锁窗口实体、UI 控件布局与黑屏息屏状态机
+│   ├── InputHooks.cs       # Win32 底层全局键鼠钩子与修饰键释放保障
+│   ├── CardPanel.cs        # 高性能抗锯齿圆角悬浮卡片面板
+│   ├── HotkeyHelper.cs     # 全局热键快捷键语法解析器
+│   └── Native.cs           # Windows API P/Invoke 声明与结构体定义
+├── scripts/                # 编译辅助脚本
+│   ├── build.bat           # 核心批处理构建脚本
+│   └── build.ps1           # PowerShell 构建脚本
+├── tests/                  # 自动化回归测试
+│   └── test_fakelock.py    # Python 跨进程生命周期与单实例回归测试
+├── build.bat               # 根目录便捷一键编译批处理
+├── build.ps1               # 根目录便捷 PowerShell 编译
+├── run.bat                 # 启动脚本（双击常驻托盘后台）
+├── lock.bat                # 快捷上锁脚本（立即呼出全屏假锁）
+├── unlock.bat              # 快捷解锁脚本（命令行解除锁定收回托盘）
+├── quit.bat                # 快捷退出脚本（彻底关闭后台托盘）
+├── config.ini              # 运行时配置文件（密码、透明度、热键等）
+├── LICENSE                 # MIT 开源许可证
+└── README.md               # 中文说明文档
 ```

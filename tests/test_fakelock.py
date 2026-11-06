@@ -3,7 +3,7 @@ import time
 import os
 import sys
 
-BASE_DIR = r"D:\Tools\fake-lock"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE_PATH = os.path.join(BASE_DIR, "FakeLock.exe")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.ini")
 

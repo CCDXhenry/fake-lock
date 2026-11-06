@@ -1,0 +1,33 @@
+name: Build FakeLock
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Build FakeLock executable
+      run: |
+        .\build.bat
+
+    - name: Verify build artifact
+      run: |
+        if (!(Test-Path "FakeLock.exe")) {
+          Write-Error "FakeLock.exe was not created!"
+          exit 1
+        }
+        Write-Host "FakeLock.exe built successfully. File size:" ((Get-Item FakeLock.exe).Length) "bytes"
+
+    - name: Upload binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: FakeLock-Windows
+        path: FakeLock.exe
