@@ -17,9 +17,11 @@ namespace FakeLock
         private bool _excludeFromCapture = true;
         private string _lockHotkeyStr = "Alt+L";
         private bool _startLocked = false;
+        private bool? _autoStartConfig = null;
         private bool _testMode = false;
 
         public bool StartLocked { get { return _startLocked; } }
+        public bool? AutoStartConfig { get { return _autoStartConfig; } }
         public string LockHotkeyStr { get { return _lockHotkeyStr; } }
         public bool IsLocked { get; private set; }
 
@@ -100,6 +102,8 @@ namespace FakeLock
                     sb.AppendLine("BlackScreen=true");
                     sb.AppendLine("; 唤醒点亮后，无操作再次自动黑屏的秒数（0 表示点亮后不自动重黑，默认 15 秒）");
                     sb.AppendLine("WakeTimeout=15");
+                    sb.AppendLine("; 是否开机自启动（true: 登录 Windows 时自动在后台托盘常驻; false: 手动启动）");
+                    sb.AppendLine("AutoStart=false");
                     File.WriteAllText(configPath, sb.ToString(), Encoding.UTF8);
                 }
                 else
@@ -146,6 +150,11 @@ namespace FakeLock
                             int to;
                             if (int.TryParse(val, out to) && to >= 0) _wakeTimeout = to;
                         }
+                        else if (key == "autostart")
+                        {
+                            bool b;
+                            if (bool.TryParse(val, out b)) _autoStartConfig = b;
+                        }
                     }
                 }
             }
@@ -189,6 +198,12 @@ namespace FakeLock
                     else if (a == "-test")
                     {
                         _testMode = true;
+                    }
+                    else if ((a == "-autostart" || a == "-auto") && i + 1 < args.Length)
+                    {
+                        string val = args[++i].ToLowerInvariant();
+                        if (val == "true" || val == "1" || val == "on" || val == "enable") _autoStartConfig = true;
+                        else if (val == "false" || val == "0" || val == "off" || val == "disable") _autoStartConfig = false;
                     }
                 }
             }

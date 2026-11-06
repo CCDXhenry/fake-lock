@@ -14,6 +14,7 @@ namespace FakeLock
         private NotifyIcon _notifyIcon;
         private LockForm _lockForm;
         private MessageWindow _msgWindow;
+        private MenuItem _itemAutoStart;
         private EventWaitHandle _lockEvt;
         private EventWaitHandle _unlockEvt;
         private EventWaitHandle _quitEvt;
@@ -25,6 +26,12 @@ namespace FakeLock
         {
             _lockForm = new LockForm(this);
             _lockForm.LoadConfigAndArgs(args);
+
+            // 同步开机自启动配置
+            if (_lockForm.AutoStartConfig.HasValue)
+            {
+                AutoStartHelper.SyncWithConfig(_lockForm.AutoStartConfig.Value);
+            }
 
             // 创建原生消息监听窗口（用于捕获全局热键 WM_HOTKEY）
             _msgWindow = new MessageWindow(OnGlobalHotkeyTriggered);
@@ -64,11 +71,14 @@ namespace FakeLock
             // 右键菜单
             ContextMenu menu = new ContextMenu();
             MenuItem itemLock = new MenuItem("🔒 立即锁定 (" + _lockForm.LockHotkeyStr + ")", (s, e) => _lockForm.ShowLock());
+            _itemAutoStart = new MenuItem("🚀 开机自启动", OnToggleAutoStart);
+            _itemAutoStart.Checked = AutoStartHelper.IsAutoStartEnabled();
             MenuItem itemReload = new MenuItem("⚙️ 重新加载配置", (s, e) => ReloadConfig());
             MenuItem itemSep = new MenuItem("-");
             MenuItem itemExit = new MenuItem("❌ 退出程序", (s, e) => Shutdown());
 
             menu.MenuItems.Add(itemLock);
+            menu.MenuItems.Add(_itemAutoStart);
             menu.MenuItems.Add(itemReload);
             menu.MenuItems.Add(itemSep);
             menu.MenuItems.Add(itemExit);
@@ -111,9 +121,37 @@ namespace FakeLock
             UnregisterHotkey();
             _lockForm.LoadConfigAndArgs(null);
             RegisterHotkey();
+            if (_lockForm.AutoStartConfig.HasValue)
+            {
+                AutoStartHelper.SyncWithConfig(_lockForm.AutoStartConfig.Value);
+            }
+            if (_itemAutoStart != null)
+            {
+                _itemAutoStart.Checked = AutoStartHelper.IsAutoStartEnabled();
+            }
             UpdateTrayTooltip("已更新配置 (" + _lockForm.LockHotkeyStr + " 锁定)");
             _notifyIcon.ShowBalloonTip(2000, "配置已重新加载",
-                string.Format("当前快捷键: {0} | 密码: 已生效", _lockForm.LockHotkeyStr), ToolTipIcon.Info);
+                string.Format("当前快捷键: {0} | 自启动: {1}", _lockForm.LockHotkeyStr, AutoStartHelper.IsAutoStartEnabled() ? "已开启" : "未开启"), ToolTipIcon.Info);
+        }
+
+        private void OnToggleAutoStart(object sender, EventArgs e)
+        {
+            bool current = AutoStartHelper.IsAutoStartEnabled();
+            bool next = !current;
+            bool ok = AutoStartHelper.SetAutoStart(next);
+            if (ok)
+            {
+                if (_itemAutoStart != null) _itemAutoStart.Checked = next;
+                AutoStartHelper.UpdateConfigAutoStart(next);
+                string tip = next
+                    ? "已开启开机自启动：登录 Windows 时将自动在后台托盘就绪。"
+                    : "已关闭开机自启动。";
+                _notifyIcon.ShowBalloonTip(2000, "自启动设置", tip, ToolTipIcon.Info);
+            }
+            else
+            {
+                _notifyIcon.ShowBalloonTip(2000, "设置失败", "修改注册表失败，请检查安全权限。", ToolTipIcon.Warning);
+            }
         }
 
         private void OnGlobalHotkeyTriggered()

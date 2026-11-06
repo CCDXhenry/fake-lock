@@ -20,9 +20,10 @@ namespace FakeLock
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // 处理命令行控制指令（跨进程通信）
+            // 处理命令行控制指令（跨进程通信与配置）
             if (args != null && args.Length > 0)
             {
+                Native.AttachConsole(Native.ATTACH_PARENT_PROCESS);
                 for (int i = 0; i < args.Length; i++)
                 {
                     string a = args[i].ToLowerInvariant();
@@ -39,6 +40,24 @@ namespace FakeLock
                     if (a == "-quit" || a == "-exit")
                     {
                         SignalEvent(QuitEventName, "[FakeLock] 已发送退出信号。");
+                        return;
+                    }
+                    if (a == "-autostart" || a == "-auto")
+                    {
+                        if (i + 1 < args.Length && !args[i + 1].StartsWith("-"))
+                        {
+                            string val = args[++i].ToLowerInvariant();
+                            bool enable = (val == "true" || val == "1" || val == "on" || val == "enable");
+                            bool ok = AutoStartHelper.SetAutoStart(enable);
+                            AutoStartHelper.UpdateConfigAutoStart(enable);
+                            Console.WriteLine(ok ? ("[FakeLock] 开机自启动设置成功: " + (enable ? "已开启" : "已关闭"))
+                                                 : "[FakeLock] 开机自启动设置失败！");
+                        }
+                        else
+                        {
+                            bool current = AutoStartHelper.IsAutoStartEnabled();
+                            Console.WriteLine("[FakeLock] 当前开机自启动状态: " + (current ? "已开启" : "已关闭"));
+                        }
                         return;
                     }
                     if (a == "-notice" || a == "-n" || a == "-status")

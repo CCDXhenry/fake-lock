@@ -89,6 +89,11 @@ namespace FakeLock
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         public static extern IntPtr GetModuleHandle(string lpModuleName);
 
+        public const uint ATTACH_PARENT_PROCESS = 0xFFFFFFFF;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool AttachConsole(uint dwProcessId);
+
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT
         {
