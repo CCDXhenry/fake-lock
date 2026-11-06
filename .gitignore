@@ -1,0 +1,16 @@
+# 日志与运行时临时文件
+*.log
+fakelock.log
+fakelock_notice.txt
+*.tmp
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 系统与编辑器缓存
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+.vscode/
