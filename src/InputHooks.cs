@@ -52,7 +52,15 @@ namespace FakeLock
 
             _kbHook = Native.SetWindowsHookEx(Native.WH_KEYBOARD_LL, _kbProc, IntPtr.Zero, 0);
             _mouseHook = Native.SetWindowsHookEx(Native.WH_MOUSE_LL, _mouseProc, IntPtr.Zero, 0);
-            Log("InitHooks kb=" + _kbHook + " mouse=" + _mouseHook);
+            if (_kbHook == IntPtr.Zero || _mouseHook == IntPtr.Zero)
+            {
+                int err = Marshal.GetLastWin32Error();
+                Log("InitHooks failed! kb=" + _kbHook + " mouse=" + _mouseHook + " error=" + err);
+            }
+            else
+            {
+                Log("InitHooks succeeded kb=" + _kbHook + " mouse=" + _mouseHook);
+            }
         }
 
         private void UninstallHooks()
@@ -88,13 +96,6 @@ namespace FakeLock
                 else if (k.vkCode == 0x12 || k.vkCode == 0xA4 || k.vkCode == 0xA5) _altDown = isDown;
                 else if (k.vkCode == 0x5B || k.vkCode == 0x5C) _winDown = isDown;
 
-                if (isDown && k.vkCode == 0x7B && _ctrlDown && _shiftDown && _altDown)
-                {
-                    Log("Emergency hotkey triggered");
-                    this.BeginInvoke(new Action(HideLock));
-                    return (IntPtr)1;
-                }
-
                 // 检测 Win+L：自动解除假锁并锁定 Windows 工作站
                 if (isDown && _winDown && (k.vkCode == 0x4C || k.vkCode == 'L'))
                 {
@@ -112,6 +113,12 @@ namespace FakeLock
                     // 如果当前处于黑屏休眠状态，按任意键唤醒点亮屏幕
                     if (_isAsleep)
                     {
+                        // 刚上锁 350ms 内的按键通常为快捷键余波，吞噬但不误唤醒
+                        if ((DateTime.Now - _startTime).TotalMilliseconds < 350)
+                        {
+                            return (IntPtr)1;
+                        }
+
                         this.BeginInvoke(new Action(WakeUp));
 
                         // 常用唤醒功能键/修饰键仅用于点亮，不作为密码字符输入
@@ -141,24 +148,13 @@ namespace FakeLock
 
                     if (k.vkCode == 0x1B)
                     {
-                        this.BeginInvoke(new Action(() =>
-                        {
-                            _txtPassword.Clear();
-                            _lblError.Visible = false;
-                        }));
+                        this.BeginInvoke(new Action(ClearPassword));
                         return (IntPtr)1;
                     }
 
                     if (k.vkCode == 0x08)
                     {
-                        this.BeginInvoke(new Action(() =>
-                        {
-                            if (_txtPassword.Text.Length > 0)
-                            {
-                                _txtPassword.Text = _txtPassword.Text.Substring(0, _txtPassword.Text.Length - 1);
-                                _txtPassword.SelectionStart = _txtPassword.Text.Length;
-                            }
-                        }));
+                        this.BeginInvoke(new Action(BackspacePassword));
                         return (IntPtr)1;
                     }
 
@@ -166,11 +162,7 @@ namespace FakeLock
                     if (c.HasValue)
                     {
                         char ch = c.Value;
-                        this.BeginInvoke(new Action(() =>
-                        {
-                            _lblError.Visible = false;
-                            _txtPassword.AppendText(ch.ToString());
-                        }));
+                        this.BeginInvoke(new Action(() => AppendPasswordChar(ch)));
                         return (IntPtr)1;
                     }
 
@@ -247,6 +239,7 @@ namespace FakeLock
                 Native.MSLLHOOKSTRUCT m = (Native.MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Native.MSLLHOOKSTRUCT));
                 bool injected = (m.flags & Native.LLMHF_INJECTED) != 0;
 
+                // 核心保障 1：AI 自动化注入鼠标消息（SendInput / PyAutoGUI / MCP）100% 畅通放行
                 if (injected)
                 {
                     return Native.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
@@ -254,38 +247,34 @@ namespace FakeLock
 
                 Point pt = new Point(m.pt.x, m.pt.y);
 
-                // 如果处于黑屏休眠状态：检测鼠标晃动（超过10像素）或点击唤醒点亮
+                // 核心保障 2：物理鼠标防误触完全拦截
+                // 如果处于黑屏休眠状态：检测鼠标明显移动或点击，触发唤醒点亮
                 if (_isAsleep)
                 {
+                    // 刚上锁 350ms 内吞噬但不误唤醒（防止鼠标点击托盘/菜单时的抬起与微动立即冲掉黑屏）
+                    if ((DateTime.Now - _startTime).TotalMilliseconds < 350)
+                    {
+                        return (IntPtr)1;
+                    }
+
                     int dx = Math.Abs(pt.X - _lastMousePos.X);
                     int dy = Math.Abs(pt.Y - _lastMousePos.Y);
-                    if (dx > 10 || dy > 10 ||
+                    if (dx > 20 || dy > 20 ||
                         msg == Native.WM_LBUTTONDOWN || msg == Native.WM_RBUTTONDOWN || msg == Native.WM_MBUTTONDOWN)
                     {
                         _lastMousePos = pt;
                         this.BeginInvoke(new Action(WakeUp));
                     }
+                    // 无论是否唤醒，物理事件必须吞噬，绝不传递给底层游戏
                     return (IntPtr)1;
                 }
 
                 _lastMousePos = pt;
+                _sleepCountdown = _wakeTimeout;
 
-                if (_cardScreenBounds.Contains(pt))
-                {
-                    if (msg == Native.WM_LBUTTONDOWN || msg == Native.WM_RBUTTONDOWN)
-                    {
-                        _sleepCountdown = _wakeTimeout;
-                    }
-                    return Native.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
-                }
-
-                if (msg == Native.WM_LBUTTONDOWN || msg == Native.WM_LBUTTONUP ||
-                    msg == Native.WM_RBUTTONDOWN || msg == Native.WM_RBUTTONUP ||
-                    msg == Native.WM_MBUTTONDOWN || msg == Native.WM_MBUTTONUP ||
-                    msg == Native.WM_MOUSEWHEEL)
-                {
-                    return (IntPtr)1;
-                }
+                // 点亮状态下，现场物理人员碰动鼠标、点击或滚动滚轮，一律全部拦截！
+                // 彻底防止碰倒鼠标或震动导致游戏视角漂移、角色乱走！
+                return (IntPtr)1;
             }
 
             return Native.CallNextHookEx(_mouseHook, nCode, wParam, lParam);

@@ -67,7 +67,7 @@ def test_autostart():
     print("[OK] config.ini 同步更新为 AutoStart=false 成功")
 
 def test_tray_lifecycle():
-    print("\n--- 测试 3: 验证托盘后台常驻 -> -lock 呼出 -> -unlock 收回 -> -quit 退出 ---")
+    print("\n--- 测试 3: 验证托盘后台常驻 -> -status -> -lock -> -notice -> -unlock -> -quit 生命周期 ---")
     
     # 启动后台托盘进程
     print("[Test 3.1] 启动 FakeLock 后台托盘常驻...")
@@ -86,29 +86,49 @@ def test_tray_lifecycle():
         second.kill()
     print("[OK] 单实例保护生效")
     
+    # 查询状态
+    print("[Test 3.3] 执行 FakeLock.exe -status 查询托盘就绪状态...")
+    res_status = subprocess.run([EXE_PATH, "-status"], capture_output=True, text=True)
+    print(f"[OK] -status 输出:\n{res_status.stdout.strip()}")
+    assert "后台运行中" in res_status.stdout, "状态未正确识别为后台运行中"
+    assert "未锁定" in res_status.stdout, "状态未正确识别为未锁定"
+
     # 发送 -lock 信号
-    print("[Test 3.3] 执行 FakeLock.exe -lock 呼出全屏假锁...")
+    print("[Test 3.4] 执行 FakeLock.exe -lock 呼出全屏防误触假锁...")
     res_lock = subprocess.run([EXE_PATH, "-lock"], capture_output=True, text=True)
     print(f"[OK] -lock 输出: {res_lock.stdout.strip()}")
     time.sleep(1.0)
     assert proc.poll() is None, "进程在锁屏期间不应退出"
     
+    # 查询锁屏状态
+    res_status_locked = subprocess.run([EXE_PATH, "-status"], capture_output=True, text=True)
+    print(f"[OK] -status (锁定态) 输出:\n{res_status_locked.stdout.strip()}")
+    assert "已锁定" in res_status_locked.stdout, "状态未正确识别为已锁定"
+
     # 发送 -notice 信号动态更新锁屏卡片文本
-    print("[Test 3.4] 执行 FakeLock.exe -notice 动态广播提示文本...")
-    res_notice = subprocess.run([EXE_PATH, "-notice", "Throw项目: 关卡3压力测试中 (回合 12/50)"], capture_output=True, text=True)
+    print("[Test 3.5] 执行 FakeLock.exe -notice 动态广播提示文本...")
+    test_notice = "Throw项目: 关卡3压力测试中 (回合 12/50)"
+    res_notice = subprocess.run([EXE_PATH, "-notice", test_notice], capture_output=True, text=True)
     print(f"[OK] -notice 输出: {res_notice.stdout.strip()}")
     time.sleep(0.5)
 
+    res_status_notice = subprocess.run([EXE_PATH, "-status"], capture_output=True, text=True)
+    print(f"[OK] -status (更新提示后) 输出:\n{res_status_notice.stdout.strip()}")
+    assert test_notice in res_status_notice.stdout, "notice 提示未能成功反映在状态查询中"
+
     # 发送 -unlock 信号
-    print("[Test 3.5] 执行 FakeLock.exe -unlock 解除锁屏并收回托盘...")
+    print("[Test 3.6] 执行 FakeLock.exe -unlock 解除锁屏并收回托盘...")
     res_unlock = subprocess.run([EXE_PATH, "-unlock"], capture_output=True, text=True)
     print(f"[OK] -unlock 输出: {res_unlock.stdout.strip()}")
     time.sleep(1.0)
     assert proc.poll() is None, "解锁后进程应继续常驻托盘，不应退出"
     print("[OK] 成功收回托盘后台，进程依然健康保活！")
     
+    res_status_unlocked = subprocess.run([EXE_PATH, "-status"], capture_output=True, text=True)
+    assert "未锁定" in res_status_unlocked.stdout, "解锁后状态未恢复为未锁定"
+
     # 发送 -quit 信号
-    print("[Test 3.6] 执行 FakeLock.exe -quit 彻底退出后台托盘...")
+    print("[Test 3.7] 执行 FakeLock.exe -quit 彻底退出后台托盘...")
     res_quit = subprocess.run([EXE_PATH, "-quit"], capture_output=True, text=True)
     print(f"[OK] -quit 输出: {res_quit.stdout.strip()}")
     
@@ -116,12 +136,23 @@ def test_tray_lifecycle():
     proc.wait(timeout=5)
     print(f"[PASS] 托盘进程已彻底安全退出！退出码: {proc.returncode}")
 
+def test_no_password_leak():
+    print("\n--- 测试 4: 验证日志文件中绝无明文密码与击键记录泄漏 ---")
+    log_path = os.path.join(BASE_DIR, "fakelock.log")
+    if os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            log_content = f.read()
+        assert "expected=" not in log_content, "日志中依然存在明文 expected 密码！"
+        assert "Key char:" not in log_content, "日志中依然存在按键字符记录！"
+        print("[OK] fakelock.log 检查通过：无任何敏感明文密码与按键记录！")
+
 def main():
     try:
         test_config()
         test_autostart()
         test_tray_lifecycle()
-        print("\n================ 所有自启动、托盘常驻与快捷键回归测试全部通过！ ================")
+        test_no_password_leak()
+        print("\n================ 所有自启动、托盘常驻与生命周期回归测试全部通过！ ================")
     except Exception as e:
         print(f"\n[FAIL] 测试失败: {e}")
         sys.exit(1)

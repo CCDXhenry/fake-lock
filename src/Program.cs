@@ -60,7 +60,12 @@ namespace FakeLock
                         }
                         return;
                     }
-                    if (a == "-notice" || a == "-n" || a == "-status")
+                    if (a == "-status")
+                    {
+                        PrintStatus();
+                        return;
+                    }
+                    if (a == "-notice" || a == "-n")
                     {
                         string noticeMsg = (i + 1 < args.Length) ? args[++i] : "";
                         if (!string.IsNullOrEmpty(noticeMsg))
@@ -127,6 +132,49 @@ namespace FakeLock
             {
                 Console.WriteLine("[FakeLock] 未检测到后台运行的 FakeLock 实例。");
             }
+        }
+
+        private static void PrintStatus()
+        {
+            bool isRunning = false;
+            try
+            {
+                using (Mutex mutex = Mutex.OpenExisting(MutexName))
+                {
+                    isRunning = true;
+                }
+            }
+            catch { }
+
+            if (!isRunning)
+            {
+                Console.WriteLine("[FakeLock] 状态: 未在后台运行");
+                return;
+            }
+
+            Console.WriteLine("[FakeLock] 状态: 后台运行中");
+            try
+            {
+                string statusPath = Path.Combine(Path.GetTempPath(), "fakelock_status.txt");
+                if (File.Exists(statusPath))
+                {
+                    string[] lines = File.ReadAllLines(statusPath, Encoding.UTF8);
+                    foreach (string line in lines)
+                    {
+                        if (line.StartsWith("locked=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string val = line.Substring(7).Trim();
+                            bool locked = (val.Equals("true", StringComparison.OrdinalIgnoreCase));
+                            Console.WriteLine("  - 锁定状态: " + (locked ? "已锁定 (防物理误触保护中)" : "未锁定 (托盘就绪)"));
+                        }
+                        else if (line.StartsWith("notice=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            Console.WriteLine("  - 当前提示: " + line.Substring(7).Trim());
+                        }
+                    }
+                }
+            }
+            catch { }
         }
     }
 }

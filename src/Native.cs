@@ -9,6 +9,8 @@ namespace FakeLock
         public const int WS_EX_TOOLWINDOW = 0x00000080;
         public const int WS_EX_LAYERED = 0x00080000;
         public const int WS_EX_TRANSPARENT = 0x00000020;
+        public const int WS_EX_NOACTIVATE = 0x08000000;
+        public const int SW_SHOWNOACTIVATE = 4;
 
         public const int WM_NCHITTEST = 0x0084;
         public const int HTTRANSPARENT = -1;
@@ -77,11 +79,25 @@ namespace FakeLock
         [DllImport("user32.dll")]
         public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
 
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        public const int GWL_EXSTYLE = -20;
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool LockWorkStation();

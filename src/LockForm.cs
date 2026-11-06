@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -23,6 +24,7 @@ namespace FakeLock
         public bool StartLocked { get { return _startLocked; } }
         public bool? AutoStartConfig { get { return _autoStartConfig; } }
         public string LockHotkeyStr { get { return _lockHotkeyStr; } }
+        public string NoticeText { get { return _notice; } }
         public bool IsLocked { get; private set; }
 
         private Panel _cardPanel;
@@ -220,6 +222,7 @@ namespace FakeLock
             {
                 _lblNotice.Text = newNotice;
             }
+            if (_trayContext != null) _trayContext.WriteStatusSnapshot();
             Log("Notice updated: " + newNotice);
         }
 
@@ -293,18 +296,20 @@ namespace FakeLock
             _txtPassword.BackColor = Color.FromArgb(16, 20, 28);
             _txtPassword.ForeColor = Color.FromArgb(240, 245, 255);
             _txtPassword.BorderStyle = BorderStyle.FixedSingle;
+            _txtPassword.ReadOnly = true;
+            _txtPassword.TabStop = false;
             _txtPassword.Size = new Size(280, 36);
             _txtPassword.Location = new Point((cardW - 280) / 2, 134);
             _cardPanel.Controls.Add(_txtPassword);
 
             _btnUnlock = new Button();
-            _btnUnlock.Text = "🔓 解 除 锁 定 (Enter)";
+            _btnUnlock.Text = "🔓 输入密码后按 Enter 解锁";
             _btnUnlock.Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold);
             _btnUnlock.BackColor = Color.FromArgb(0, 160, 210);
             _btnUnlock.ForeColor = Color.White;
             _btnUnlock.FlatStyle = FlatStyle.Flat;
             _btnUnlock.FlatAppearance.BorderSize = 0;
-            _btnUnlock.Cursor = Cursors.Hand;
+            _btnUnlock.TabStop = false;
             _btnUnlock.Size = new Size(280, 40);
             _btnUnlock.Location = new Point((cardW - 280) / 2, 180);
             _btnUnlock.Click += (s, e) => TryUnlock();
@@ -330,6 +335,17 @@ namespace FakeLock
             this.BackColor = Color.Black;
             this.Opacity = 1.0;
 
+            // 彻底去除 WS_EX_LAYERED 分层样式，确保物理显示器上 100% 绝对纯黑实心，绝无任何半透明透光！
+            try
+            {
+                int exStyle = Native.GetWindowLong(this.Handle, Native.GWL_EXSTYLE);
+                if ((exStyle & Native.WS_EX_LAYERED) != 0)
+                {
+                    Native.SetWindowLong(this.Handle, Native.GWL_EXSTYLE, exStyle & ~Native.WS_EX_LAYERED);
+                }
+            }
+            catch { }
+
             if (!_cursorHidden)
             {
                 Cursor.Hide();
@@ -337,7 +353,7 @@ namespace FakeLock
             }
             if (_sleepTimer != null) _sleepTimer.Stop();
             _trayContext.UpdateTrayTooltip("黑屏息屏挂机中 (键鼠输入唤醒)");
-            Log("Entered black screen sleep mode");
+            Log("Entered black screen sleep mode (solid 100% black)");
         }
 
         public void WakeUp()
@@ -359,7 +375,6 @@ namespace FakeLock
                 _cursorHidden = false;
             }
 
-            _txtPassword.Focus();
             _sleepCountdown = _wakeTimeout;
             if (_wakeTimeout > 0 && _sleepTimer != null)
             {
@@ -377,16 +392,14 @@ namespace FakeLock
                 {
                     WakeUp();
                 }
-                else
-                {
-                    this.Activate();
-                    _txtPassword.Focus();
-                }
                 return;
             }
 
             this.IsLocked = true;
-            Log("ShowLock activated");
+            Log("ShowLock activated (zero-activation mode)");
+
+            // 记录当前活动的前台窗口（Roblox Studio 等），确保遮罩呼出后焦点依然属于该目标窗口
+            IntPtr targetHwnd = Native.GetForegroundWindow();
 
             _startTime = DateTime.Now;
             _txtPassword.Clear();
@@ -398,28 +411,46 @@ namespace FakeLock
             _winDown = false;
             _lastMousePos = Cursor.Position;
 
-            this.Show();
-            this.WindowState = FormWindowState.Normal;
-            this.TopMost = true;
-
-            if (_excludeFromCapture)
-            {
-                Native.SetWindowDisplayAffinity(this.Handle, Native.WDA_EXCLUDEFROMCAPTURE);
-            }
-
-            Native.SetForegroundWindow(this.Handle);
-            this.Activate();
-
             if (_blackScreen)
             {
-                EnterSleepMode();
+                this.BackColor = Color.Black;
+                this.Opacity = 1.0;
+                _cardPanel.Visible = false;
             }
             else
             {
                 this.BackColor = Color.FromArgb(12, 16, 24);
                 this.Opacity = _opacity;
                 _cardPanel.Visible = true;
-                _txtPassword.Focus();
+            }
+
+            // 以无激活方式显示遮罩
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+            this.TopMost = true;
+
+            if (_excludeFromCapture)
+            {
+                bool affOk = Native.SetWindowDisplayAffinity(this.Handle, Native.WDA_EXCLUDEFROMCAPTURE);
+                if (!affOk)
+                {
+                    Log("SetWindowDisplayAffinity failed with error: " + Marshal.GetLastWin32Error());
+                }
+                else
+                {
+                    Log("SetWindowDisplayAffinity applied successfully");
+                }
+            }
+
+            // 维护目标窗口前台焦点，绝不夺取给 FakeLock
+            if (targetHwnd != IntPtr.Zero && targetHwnd != this.Handle)
+            {
+                Native.SetForegroundWindow(targetHwnd);
+            }
+
+            if (_blackScreen)
+            {
+                EnterSleepMode();
             }
 
             InitHooks();
@@ -428,6 +459,7 @@ namespace FakeLock
             {
                 _trayContext.UpdateTrayTooltip("挂机锁定中 (输入密码解锁)");
             }
+            if (_trayContext != null) _trayContext.WriteStatusSnapshot();
         }
 
         public void HideLock()
@@ -457,21 +489,41 @@ namespace FakeLock
             this.Hide();
 
             _trayContext.UpdateTrayTooltip("后台就绪 (" + _lockHotkeyStr + " 锁定)");
+            if (_trayContext != null) _trayContext.WriteStatusSnapshot();
+        }
+
+        public void AppendPasswordChar(char ch)
+        {
+            _lblError.Visible = false;
+            _txtPassword.AppendText(ch.ToString());
+        }
+
+        public void BackspacePassword()
+        {
+            if (_txtPassword.Text.Length > 0)
+            {
+                _txtPassword.Text = _txtPassword.Text.Substring(0, _txtPassword.Text.Length - 1);
+            }
+        }
+
+        public void ClearPassword()
+        {
+            _txtPassword.Clear();
+            _lblError.Visible = false;
         }
 
         public void TryUnlock()
         {
             string input = _txtPassword.Text;
-            Log("TryUnlock input='" + input + "' expected='" + _password + "'");
-            if (input == _password)
+            bool matched = (string.IsNullOrEmpty(_password) || input == _password);
+            Log("TryUnlock attempt, matched=" + matched);
+            if (matched)
             {
                 HideLock();
             }
             else
             {
                 _lblError.Visible = true;
-                _txtPassword.SelectAll();
-                _txtPassword.Focus();
                 ShakeCard();
             }
         }
@@ -502,12 +554,17 @@ namespace FakeLock
             shakeTimer.Start();
         }
 
+        protected override bool ShowWithoutActivation
+        {
+            get { return true; }
+        }
+
         protected override CreateParams CreateParams
         {
             get
             {
                 CreateParams cp = base.CreateParams;
-                cp.ExStyle |= Native.WS_EX_TOPMOST | Native.WS_EX_TOOLWINDOW;
+                cp.ExStyle |= Native.WS_EX_TOPMOST | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE;
                 return cp;
             }
         }
@@ -516,26 +573,9 @@ namespace FakeLock
         {
             if (m.Msg == Native.WM_NCHITTEST)
             {
-                if (_isAsleep)
-                {
-                    m.Result = (IntPtr)Native.HTTRANSPARENT;
-                    return;
-                }
-
-                short x = (short)(m.LParam.ToInt32() & 0xFFFF);
-                short y = (short)((m.LParam.ToInt32() >> 16) & 0xFFFF);
-                Point pt = new Point(x, y);
-
-                if (_cardScreenBounds.Contains(pt))
-                {
-                    m.Result = (IntPtr)Native.HTCLIENT;
-                    return;
-                }
-                else
-                {
-                    m.Result = (IntPtr)Native.HTTRANSPARENT;
-                    return;
-                }
+                // 全屏穿透：所有鼠标命中测试均视为透明，AI 注入鼠标直接无损穿透送达游戏
+                m.Result = (IntPtr)Native.HTTRANSPARENT;
+                return;
             }
 
             base.WndProc(ref m);

@@ -59,6 +59,8 @@ namespace FakeLock
                     string.Format("已常驻系统托盘，按快捷键【{0}】随时开启半透明锁屏。", _lockForm.LockHotkeyStr),
                     ToolTipIcon.Info);
             }
+
+            WriteStatusSnapshot();
         }
 
         private void InitTrayIcon()
@@ -289,8 +291,32 @@ namespace FakeLock
                 _notifyIcon = null;
             }
 
+            RemoveStatusSnapshot();
             ExitThread();
             Application.Exit();
+        }
+
+        public void WriteStatusSnapshot()
+        {
+            try
+            {
+                string statusPath = Path.Combine(Path.GetTempPath(), "fakelock_status.txt");
+                bool isLocked = (_lockForm != null && _lockForm.IsLocked);
+                string notice = (_lockForm != null) ? _lockForm.NoticeText : "";
+                string content = "running=true\r\nlocked=" + (isLocked ? "true" : "false") + "\r\nnotice=" + notice;
+                File.WriteAllText(statusPath, content, Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        private static void RemoveStatusSnapshot()
+        {
+            try
+            {
+                string statusPath = Path.Combine(Path.GetTempPath(), "fakelock_status.txt");
+                if (File.Exists(statusPath)) File.Delete(statusPath);
+            }
+            catch { }
         }
 
         private static Icon CreateTrayIcon()
