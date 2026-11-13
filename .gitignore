@@ -6,6 +6,7 @@ fakelock_notice.txt
 
 # Python 缓存
 __pycache__/
+.cache/
 *.py[cod]
 
 # 系统与编辑器缓存

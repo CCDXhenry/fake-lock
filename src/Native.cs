@@ -10,6 +10,7 @@ namespace FakeLock
         public const int WS_EX_LAYERED = 0x00080000;
         public const int WS_EX_TRANSPARENT = 0x00000020;
         public const int WS_EX_NOACTIVATE = 0x08000000;
+        public const uint LWA_ALPHA = 0x00000002;
         public const int SW_SHOWNOACTIVATE = 4;
 
         public const int WM_NCHITTEST = 0x0084;
@@ -81,6 +82,9 @@ namespace FakeLock
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
 
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);

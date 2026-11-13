@@ -11,7 +11,7 @@
 2. **人离开电脑需防止误触**：离开座位挂机跑测试时，需要有一层明显的视觉遮罩挡住屏幕，既能展示电脑处于“锁定/挂机中”，又能防止周围人员或猫咪误触键鼠干扰测试。
 3. **随用随呼出，常驻后台不打扰**：日常开机或启动后自动隐退到 Windows 系统托盘（0% CPU 占用），离开电脑时按快捷键（默认 **`Alt + L`**）即可秒级锁定，回来输入密码后自动退回托盘，支持全天反复循环使用。
 4. **AI 自动化与真人操作精准分离**：
-   - **AI 操作 100% 放行**：Codex / 自动化脚本注入的模拟键鼠（带 Windows `LLKHF_INJECTED` / `LLMHF_INJECTED` 标记）完全无阻穿透，Roblox Studio MCP/WebSocket 接口通信完全不受影响。
+   - **AI 注入输入放行**：钩子放行带 Windows `LLKHF_INJECTED` / `LLMHF_INJECTED` 标记的模拟键鼠，遮罩使用跨进程鼠标穿透样式。实际自动化工具仍需验证焦点、目标窗口检查和游戏是否接收输入；Roblox Studio MCP/WebSocket 通道另行测试。
    - **真人操作精准拦截**：非注入物理按键与误点击全部被拦截，仅可在中间卡片输入密码解除锁定。
 
 ---
@@ -31,7 +31,7 @@
   - 🔄 **开机自启动支持**：右键托盘菜单可直接勾选切换“🚀 开机自启动”（无管理员 UAC 弹窗要求，基于当前用户注册表 `Run` 项），登录 Windows 自动在托盘就绪。
   - 📋 **托盘右键菜单**：支持手动“立即锁定”、“开机自启动 (切换)”、“重新加载配置”、“退出程序”。
 - **截图豁免支持（Windows 10/11 原生）**：
-  - 遮罩窗口启用了 `WDA_EXCLUDEFROMCAPTURE`（可配置），使得物理屏幕上呈现半透明锁屏，而 AI 代理通过 GDI / DXGI / 截图工具抓取桌面时，系统会自动剔除遮罩，让 AI 看到 100% 原始、未受调色干扰的高清游戏渲染图。
+  - 遮罩窗口启用了 `WDA_EXCLUDEFROMCAPTURE`（可配置），请求 Windows 在支持该属性的捕获路径中剔除遮罩。本机已实测 computer-use 的 Windows Graphics Capture 窗口截图；其他 GDI / DXGI / 录屏或远程桌面后端须分别验证，不能仅凭属性设置成功认定全部兼容。
 
 ---
 
@@ -121,6 +121,26 @@ AutoStart=false
 ---
 
 ## 项目架构与重新编译
+
+### 黑屏自动化实测与回归
+
+黑屏窗口使用 `WS_EX_LAYERED | WS_EX_TRANSPARENT`，同时以 `LWA_ALPHA=255` 保持完全不透明。
+不要在进入黑屏时删除分层样式：只返回 `HTTRANSPARENT` 不足以让跨进程命中检查穿透，
+computer-use 等工具可能在注入前报告点击位置被 FakeLock 覆盖。物理键鼠仍由底层钩子拦截。
+该行为依据 [Windows 分层窗口命中规则](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#layered-windows)
+和 [SetLayeredWindowAttributes](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setlayeredwindowattributes)。
+
+在目标应用前台、FakeLock 已处于纯黑模式时，可以运行只读诊断：
+
+```powershell
+python tests/inspect_lock_state.py --lock-pid (Get-Process FakeLock).Id
+```
+
+诊断检查窗口样式、Alpha=255、截图排除值 17、未抢前台焦点，以及屏幕中心的
+`WindowFromPoint` 是否仍命中遮罩。它不会上锁、解锁或发送键鼠，也不能代替截图和操作实测。
+实际回归必须分别验证桌面注入与 Studio MCP 输入，并用角色位置、工具装备、拾取结果及日志确认操作生效；
+截图应在移动前后获取，确认内容更新。窗口截图成功不代表所有桌面捕获后端均已验证。
+测试前安排独立超时解锁，测试结束后执行 `FakeLock.exe -unlock`。
 
 本项目源码完全解耦模块化，并使用 Windows 自带的 C# 编译器编译（**无需安装 Visual Studio、.NET SDK 或任何第三方环境**）：
 

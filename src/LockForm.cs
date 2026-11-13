@@ -335,16 +335,16 @@ namespace FakeLock
             this.BackColor = Color.Black;
             this.Opacity = 1.0;
 
-            // 彻底去除 WS_EX_LAYERED 分层样式，确保物理显示器上 100% 绝对纯黑实心，绝无任何半透明透光！
-            try
+            // Alpha=255 仍为完全不透明纯黑；保留分层与透明命中样式，使跨进程
+            // WindowFromPoint 检查和注入点击都能穿透。物理输入仍由全局钩子拦截。
+            // WinForms 在 Opacity=1 时可能移除 WS_EX_LAYERED，因此在设置后恢复。
+            int exStyle = Native.GetWindowLong(this.Handle, Native.GWL_EXSTYLE);
+            Native.SetWindowLong(this.Handle, Native.GWL_EXSTYLE,
+                exStyle | Native.WS_EX_LAYERED | Native.WS_EX_TRANSPARENT);
+            if (!Native.SetLayeredWindowAttributes(this.Handle, 0, 255, Native.LWA_ALPHA))
             {
-                int exStyle = Native.GetWindowLong(this.Handle, Native.GWL_EXSTYLE);
-                if ((exStyle & Native.WS_EX_LAYERED) != 0)
-                {
-                    Native.SetWindowLong(this.Handle, Native.GWL_EXSTYLE, exStyle & ~Native.WS_EX_LAYERED);
-                }
+                Log("SetLayeredWindowAttributes failed with error: " + Marshal.GetLastWin32Error());
             }
-            catch { }
 
             if (!_cursorHidden)
             {
@@ -564,7 +564,8 @@ namespace FakeLock
             get
             {
                 CreateParams cp = base.CreateParams;
-                cp.ExStyle |= Native.WS_EX_TOPMOST | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE;
+                cp.ExStyle |= Native.WS_EX_TOPMOST | Native.WS_EX_TOOLWINDOW |
+                    Native.WS_EX_NOACTIVATE | Native.WS_EX_TRANSPARENT;
                 return cp;
             }
         }
